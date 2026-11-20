@@ -1,0 +1,22 @@
+{
+  "owner_name": "",
+  "export_dir": "~/Documents/eBay-Buchhaltung",
+  "previous_year_revenue": null,
+  "ebay": {
+    "client_id": "PASTE_APP_ID_HERE",
+    "client_secret": "PASTE_CERT_ID_HERE",
+    "ru_name": "PASTE_RUNAME_HERE",
+    "marketplace_id": "EBAY_DE",
+    "site_id": "77"
+  },
+  "sevdesk": {
+    "api_token": "PASTE_SEVDESK_TOKEN_HERE",
+    "voucher_status": 100,
+    "accounts": {
+      "revenue": null,
+      "purchases": null,
+      "fees": null,
+      "shipping": null
+    }
+  }
+}

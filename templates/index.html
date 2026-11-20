@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>eBay Buchhaltung</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2430; --muted:#5b6575; --line:#dde2e8;
+          --accent:#1f6feb; --ok:#1a7f37; --okbg:#e7f5ec; --warn:#8a5a00; --warnbg:#fff4d6;
+          --danger:#b42318; --dangerbg:#fdecea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171c; --card:#1d2128; --ink:#e7eaef; --muted:#a0a9b6; --line:#323844;
+            --accent:#4c8dff; --ok:#5fd17f; --okbg:#173322; --warn:#f0c060; --warnbg:#3a2f12;
+            --danger:#ff8a80; --dangerbg:#3d1c1a; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:17px/1.5 -apple-system, system-ui, sans-serif; }
+  main { max-width:980px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { font-size:28px; margin:0 0 4px; }
+  h2 { font-size:20px; margin:0 0 12px; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; margin:0 0 16px; }
+  .row { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+  label { display:flex; flex-direction:column; gap:4px; font-size:15px; color:var(--muted); }
+  input[type=month], input[type=text], input[type=file] { font:inherit; padding:8px 10px; border:1px solid var(--line);
+         border-radius:8px; background:var(--bg); color:var(--ink); }
+  input[type=text] { width:100%; }
+  button { font:inherit; font-weight:600; padding:10px 18px; border-radius:8px; border:1px solid var(--line);
+           background:var(--card); color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button:disabled { opacity:.5; cursor:wait; }
+  .steps { display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:12px; margin-top:16px; }
+  .steps form { display:flex; flex-direction:column; gap:6px; }
+  .steps small { color:var(--muted); }
+  .msg { padding:12px 14px; border-radius:8px; margin:0 0 10px; }
+  .msg.ok { background:var(--okbg); color:var(--ok); }
+  .msg.warn { background:var(--warnbg); color:var(--warn); }
+  .msg.danger { background:var(--dangerbg); color:var(--danger); }
+  .status { display:flex; flex-wrap:wrap; gap:8px 20px; font-size:15px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; }
+  .dot.on { background:var(--ok); } .dot.off { background:var(--danger); }
+  .table-wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:15px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  td.num, th.num { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  tr.total td { font-weight:700; }
+  .muted { color:var(--muted); }
+  details summary { cursor:pointer; font-weight:600; }
+  .tag { font-size:13px; padding:1px 8px; border-radius:10px; background:var(--bg); border:1px solid var(--line); }
+</style>
+</head>
+<body>
+<main>
+  <h1>eBay Buchhaltung</h1>
+  <p class="sub">Einnahmen und Ausgaben von eBay sammeln, als Excel speichern und an sevDesk senden.</p>
+
+  {% for kind, text in messages %}<div class="msg {{ kind }}">{{ text }}</div>{% endfor %}
+
+  <div class="card">
+    <div class="status">
+      <span><span class="dot {{ 'on' if ebay_login == 'ok' else 'off' }}"></span>eBay {{ 'verbunden' if ebay_login == 'ok' else ('Anmeldung abgelaufen' if ebay_login == 'expired' else 'nicht verbunden') }}</span>
+      <span><span class="dot on"></span>sevDesk {{ 'per API verbunden' if sevdesk_ready else 'manuell (PDF-Belege)' }}</span>
+    </div>
+    {% if not ebay_ready %}<p class="muted">eBay-Schlüssel fehlen in config.json (siehe SETUP.md).</p>{% endif %}
+    {% if not sevdesk_ready %}<p class="muted">sevDesk ohne API-Zugang: Belege werden als PDF erstellt und von Hand in sevDesk hochgeladen.</p>{% endif %}
+    {% if ebay_ready and ebay_login != 'ok' %}
+    <form method="post" action="/login" style="margin-top:14px">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <p>1. <a href="{{ consent_url }}" target="_blank" rel="noopener">Bei eBay anmelden</a> und auf „Zustimmen“ klicken.<br>
+         2. Die Adresse der eBay-Seite danach komplett kopieren und hier einfügen:</p>
+      <div class="row"><input type="text" name="pasted" placeholder="https://auth2.ebay.com/...code=..." required>
+      <button class="primary">Anmeldung speichern</button></div>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Zeitraum</h2>
+    <form method="get" action="/" class="row" id="period">
+      <label>Von Monat <input type="month" name="from_month" value="{{ from_month }}"></label>
+      <label>Bis Monat <input type="month" name="to_month" value="{{ to_month }}"></label>
+      <button>Anzeigen</button>
+      <span class="muted">{{ period_label }}</span>
+    </form>
+
+    <div class="steps">
+      <form method="post" action="/fetch">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="from_month" value="{{ from_month }}"><input type="hidden" name="to_month" value="{{ to_month }}">
+        <button class="primary" {{ '' if ebay_login == 'ok' else 'disabled' }}>1. Daten von eBay holen</button>
+        <small>Verkäufe, Käufe und Gebühren abrufen.</small>
+      </form>
+      <form method="post" action="/excel">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="from_month" value="{{ from_month }}"><input type="hidden" name="to_month" value="{{ to_month }}">
+        <button class="primary">2. Excel speichern</button>
+        <small>Wird auch in Dokumente › eBay-Buchhaltung abgelegt.</small>
+      </form>
+      {% if sevdesk_ready %}
+      <form method="post" action="/preview">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="from_month" value="{{ from_month }}"><input type="hidden" name="to_month" value="{{ to_month }}">
+        <button class="primary">3. sevDesk-Vorschau</button>
+        <small>Zeigt, was gesendet würde. Noch nichts wird gesendet.</small>
+      </form>
+      {% else %}
+      <form method="post" action="/belege">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="from_month" value="{{ from_month }}"><input type="hidden" name="to_month" value="{{ to_month }}">
+        <button class="primary">3. Belege für sevDesk erstellen</button>
+        <small>PDFs in einem Ordner, dann in sevDesk unter Belege hineinziehen.</small>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if preview is defined %}
+  <div class="card">
+    <h2>Vorschau für sevDesk</h2>
+    {% set todo = preview | rejectattr('already_sent') | list %}
+    {% if todo %}
+    <div class="table-wrap"><table>
+      <tr><th>Datum</th><th>Art</th><th>Partner</th><th>Inhalt</th><th class="num">Betrag</th></tr>
+      {% for v in todo %}
+      <tr><td>{{ v.date.strftime('%d.%m.%Y') }}</td>
+          <td><span class="tag">{{ {'sale':'Einnahme','purchase':'Wareneinkauf','fees':'eBay-Gebühren'}[v.kind] }}</span></td>
+          <td>{{ v.party }}</td><td>{{ v.text }}</td><td class="num">{{ v.amount | eur }}</td></tr>
+      {% endfor %}
+    </table></div>
+    <form method="post" action="/send" style="margin-top:14px" onsubmit="return confirm('{{ todo|length }} Belege jetzt an sevDesk senden?')">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="from_month" value="{{ from_month }}"><input type="hidden" name="to_month" value="{{ to_month }}">
+      <button class="primary">{{ todo|length }} Belege an sevDesk senden</button>
+    </form>
+    {% else %}<p>Nichts Neues zu senden.</p>{% endif %}
+    {% set done = preview | selectattr('already_sent') | list %}
+    {% if done %}<p class="muted">{{ done|length }} Belege sind bereits in sevDesk.</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if accounts is defined %}
+  <div class="card"><h2>sevDesk-Konten</h2>
+    <table>{% for k, v in accounts.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</table>
+  </div>
+  {% endif %}
+
+  {% if overview is defined %}
+  {% set s = overview.summary %}
+  <div class="card">
+    <h2>Übersicht</h2>
+    {% for kind, text in overview.ku.messages %}<div class="msg {{ kind }}">{{ text }}</div>{% endfor %}
+    <div class="table-wrap"><table>
+      <tr><th>Monat</th><th class="num">Verkäufe</th><th class="num">Einnahmen</th><th class="num">Wareneinkauf</th>
+          <th class="num">Gebühren</th><th class="num">Versand</th><th class="num">Gewinn</th></tr>
+      {% for key, b in s.months.items() %}
+      <tr><td>{{ key | monthname }}</td><td class="num">{{ b.sales_count }}</td><td class="num">{{ (b.income - b.refunds) | eur }}</td>
+          <td class="num">{{ b.purchases | eur }}</td><td class="num">{{ b.fees | eur }}</td><td class="num">{{ b.labels | eur }}</td>
+          <td class="num">{{ b.profit | eur }}</td></tr>
+      {% endfor %}
+      {% set t = s.totals %}
+      <tr class="total"><td>Summe</td><td class="num">{{ t.sales_count }}</td><td class="num">{{ (t.income - t.refunds) | eur }}</td>
+          <td class="num">{{ t.purchases | eur }}</td><td class="num">{{ t.fees | eur }}</td><td class="num">{{ t.labels | eur }}</td>
+          <td class="num">{{ t.profit | eur }}</td></tr>
+    </table></div>
+    <p class="muted">Umsatz {{ overview.ku.year }} bisher: {{ overview.ku.revenue | eur }} (Kleinunternehmer-Grenzen: 25.000 € Vorjahr, 100.000 € laufendes Jahr)</p>
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <details>
+      <summary>Ältere Käufe importieren (CSV)</summary>
+      <p>eBay liefert Käufe nur für die letzten 90 Tage. Ältere Käufe einmalig in die
+         <a href="/vorlage.csv">Vorlage</a> eintragen (z. B. in Excel oder Numbers, als CSV speichern) und hier hochladen.</p>
+      <form method="post" action="/import" enctype="multipart/form-data" class="row">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <input type="hidden" name="from_month" value="{{ from_month }}"><input type="hidden" name="to_month" value="{{ to_month }}">
+        <input type="file" name="file" accept=".csv,text/csv" required>
+        <button>Importieren</button>
+      </form>
+    </details>
+    <details style="margin-top:12px">
+      <summary>sevDesk-Verbindung prüfen</summary>
+      <form method="post" action="/sevdesk-check" style="margin-top:10px">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button {{ '' if sevdesk_ready else 'disabled' }}>Verbindung und Konten prüfen</button>
+      </form>
+    </details>
+  </div>
+</main>
+<script>
+  // show progress and prevent double clicks
+  document.querySelectorAll('form[method=post]').forEach(function (f) {
+    f.addEventListener('submit', function (e) {
+      if (e.defaultPrevented || f.action.endsWith('/excel')) return;
+      var b = f.querySelector('button');
+      if (b) { setTimeout(function () { b.disabled = true; b.textContent = 'Bitte warten …'; }, 0); }
+    });
+  });
+</script>
+</body>
+</html>

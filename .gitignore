@@ -1,0 +1,10 @@
+# secrets and personal data - never share
+config.json
+tokens.json
+data/
+.venv/
+__pycache__/
+signing_key.json
+.DS_Store
+*.tmp
+.claude/
