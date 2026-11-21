@@ -161,8 +161,8 @@ def belege():
             return _page([("warn", "Keine Belege im Zeitraum. Zuerst „Daten von eBay holen“.")]
                          + [("warn", n) for n in r["notes"]])
         service.open_in_finder(r["folder"])
-        msg = ("Belege erstellt: %d Einkäufe, %d Verkaufs-Sammelbelege, %d Gebühren-Übersichten. "
-               "Ordner: %s" % (c["purchases"], c["sales"], c["fees"], r["folder"]))
+        msg = ("Belege erstellt: %d Einkäufe, %d Verkaufs-Sammelbelege, %d Gebühren-Übersichten, "
+               "%d Erstattungs-Belege. Ordner: %s" % (c["purchases"], c["sales"], c["fees"], c["refunds"], r["folder"]))
         return _page([("ok", msg)] + [("warn", n) for n in r["notes"]])
     return _run(go)
 

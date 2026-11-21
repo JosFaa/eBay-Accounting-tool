@@ -42,6 +42,7 @@ def parse_purchases_csv(text):
     if missing:
         raise ImportError_("Spalten fehlen: %s. Erwartet: %s" % (", ".join(missing), ";".join(COLUMNS)))
     rows = []
+    seen = {}
     for i, r in enumerate(reader, start=2):
         if not any((v or "").strip() for v in r.values()):
             continue
@@ -51,15 +52,24 @@ def parse_purchases_csv(text):
             raise ImportError_("Zeile %d: Datum '%s' bitte als TT.MM.JJJJ." % (i, r["Datum"]))
         price = _amount(r.get("Preis"), i, "Preis")
         shipping = _amount(r.get("Versand"), i, "Versand")
-        total = _amount(r.get("Gesamt"), i, "Gesamt") or price + shipping
+        # an explicit 0 in "Gesamt" stays 0; only an empty cell means "Preis + Versand"
+        if (r.get("Gesamt") or "").strip():
+            total = _amount(r.get("Gesamt"), i, "Gesamt")
+        else:
+            total = price + shipping
+        seller = (r.get("Verkäufer") or "").strip()
         order_id = (r.get("Bestellnummer") or "").strip()
         if not order_id:
-            h = hashlib.sha1(("%s|%s|%s" % (d, r["Artikel"], total)).encode()).hexdigest()[:10]
+            h = hashlib.sha1(("%s|%s|%s|%s" % (d, seller, r["Artikel"].strip(), total)).encode()).hexdigest()[:10]
             order_id = "CSV-" + h
+            # identical rows in one file are separate purchases: number them (stable on re-import)
+            seen[order_id] = seen.get(order_id, 0) + 1
+            if seen[order_id] > 1:
+                order_id += "-%d" % seen[order_id]
         rows.append({
             "order_id": order_id,
             "date": d.isoformat(),
-            "seller": (r.get("Verkäufer") or "").strip(),
+            "seller": seller,
             "items": r["Artikel"].strip(),
             "price": price,
             "shipping": shipping,

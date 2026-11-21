@@ -4,7 +4,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from .store import local_date
-from .summary import is_cancelled, ku_check, month_label, summarize
+from .summary import counts_as_income, counts_as_purchase, is_cancelled, ku_check, month_label, purchase_amount, summarize
 
 EUR = '#,##0.00 "€";[Red]-#,##0.00 "€"'
 DATE = "DD.MM.YYYY"
@@ -19,6 +19,7 @@ FEE_NAMES = {
     "INSERTION_FEE": "Angebotsgebühr",
     "INTERNATIONAL_FEE": "Internationale Gebühr",
     "REGULATORY_OPERATING_FEE": "Regulatorische Gebühr",
+    "FEE_CREDIT": "Gebührengutschrift (Erstattung)",
 }
 
 
@@ -43,6 +44,13 @@ def _sheet(wb, title, headers, rows, money_cols=(), date_cols=(), widths=None):
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
     return ws
+
+
+def _sale_status(x):
+    status = x.get("payment_status", "")
+    if not counts_as_income(x):
+        return "nicht gezählt (%s)" % ("storniert" if is_cancelled(x) else status or "unbezahlt")
+    return status + (" / storniert" if is_cancelled(x) else "")
 
 
 def build_workbook(ledger, start, end, path, previous_year_revenue=None):
@@ -114,16 +122,17 @@ def build_workbook(ledger, start, end, path, previous_year_revenue=None):
     _sheet(wb, "Verkäufe",
            ["Datum", "Bestellnummer", "Artikel", "Käufer", "Land", "Preis", "Versand", "Rabatt", "Einnahme", "eBay-Gebühren", "Status"],
            [[local_date(x["date"]), x["order_id"], x["items"], x["buyer"], x["buyer_country"], x["price"], x["shipping"],
-             x["discount"], x["income"], x["ebay_fees"], "storniert" if is_cancelled(x) else x.get("payment_status", "")]
+             x["discount"], x["income"], x["ebay_fees"], _sale_status(x)]
             for x in sales],
            money_cols=(6, 7, 8, 9, 10), date_cols=(1,), widths={3: 45, 2: 18})
 
     purchases = ledger.rows("purchases", start, end)
     _sheet(wb, "Käufe",
-           ["Datum", "Bestellnummer", "Artikel", "Verkäufer", "Preis", "Versand", "Gesamt", "Quelle"],
-           [[local_date(x["date"]), x["order_id"], x["items"], x["seller"], x["price"], x["shipping"], x["total"], x.get("source", "")]
+           ["Datum", "Bestellnummer", "Artikel", "Verkäufer", "Preis", "Versand", "Gesamt", "Bezahlt", "Quelle", "Status"],
+           [[local_date(x["date"]), x["order_id"], x["items"], x["seller"], x["price"], x["shipping"], x["total"],
+             purchase_amount(x), x.get("source", ""), "" if counts_as_purchase(x) else "nicht gezählt (storniert/unbezahlt)"]
             for x in purchases],
-           money_cols=(5, 6, 7), date_cols=(1,), widths={3: 45, 2: 18})
+           money_cols=(5, 6, 7, 8), date_cols=(1,), widths={3: 45, 2: 18, 10: 34})
 
     fees = ledger.rows("fees", start, end)
     _sheet(wb, "Gebühren",

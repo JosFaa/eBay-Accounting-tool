@@ -51,13 +51,14 @@ eBay only returns purchases from the last 90 days. For older ones:
 3. Upload it. Then create the receipts (button 3) as usual.
 
 ## Upload to sevDesk (by hand)
-Button 3 creates the folder `Dokumente › eBay-Buchhaltung › Belege <von> bis <bis>` with three subfolders:
+Button 3 creates the folder `Dokumente › eBay-Buchhaltung › Belege <von> bis <bis>` with four subfolders:
 
 | Folder | One PDF per | In sevDesk book as |
 |---|---|---|
 | `1 Einkäufe` | purchase (Eigenbeleg) | **Ausgabe**, category *Wareneingang / Wareneinkauf* |
 | `2 Verkäufe` | month (all sales together) | **Einnahme**, category *Erlöse (Kleinunternehmer)* |
 | `3 eBay-Gebühren` | month (overview) | only for comparison, see below |
+| `4 Erstattungen` | month (refunds to buyers) | **Einnahme** with a negative amount (reduces income) in the month of the refund |
 
 - In sevDesk: **Belege → Beleg hochladen**, drag all PDFs of a folder in at once. sevDesk reads date and amount; check them and pick the category.
   sevDesk may suggest "Ausgabe" for everything, so switch the sales receipts to **Einnahme**.
@@ -67,6 +68,9 @@ Button 3 creates the folder `Dokumente › eBay-Buchhaltung › Belege <von> bis
   Don't upload both for the same fees, otherwise they are counted twice.
 - Sales and fees are only created for **finished months**; the current month comes next time.
 - Export each month only once, otherwise you'd upload the same receipts again. The folder name shows which months it covers.
+  Exporting the same period again replaces the PDFs in that folder, so outdated receipts don't stay behind.
+- **Counted only when paid:** unpaid sales and cancelled or unpaid purchases get no receipt. The page lists skipped purchases so you can check them on eBay.
+  A sale that was paid and later refunded stays in its month; the refund is booked separately in the month it happened.
 
 ## Monthly routine
 At the start of each month: double-click → leave "Von/Bis" at last month →
@@ -75,7 +79,7 @@ plus eBay's fee invoice for that month.
 Running it every month keeps purchases within eBay's 90 days.
 
 ## What the tool does not do
-- **Refunds to buyers** show up in the Excel (sheet *Sonstiges*) and as a note, but are not sent to sevDesk; book them by hand.
+- **Refunds to buyers** are not sent to sevDesk automatically: upload the receipt from `4 Erstattungen` by hand. Fee credits eBay gives back on a refund appear in the fee overview.
 - **Payouts**: eBay pays out sales minus fees in batches. Matching those bank transactions to the vouchers happens in sevDesk.
 - **Not tax advice.** If revenue nears €25,000 per year the page warns; then ask the Finanzamt or a tax advisor.
 

@@ -12,7 +12,7 @@ from .config import DATA_DIR
 
 BERLIN = ZoneInfo("Europe/Berlin")
 LEDGER_PATH = DATA_DIR / "ledger.json"
-MONEY_FIELDS = {"price", "shipping", "discount", "income", "ebay_fees", "total", "amount_paid", "amount"}
+MONEY_FIELDS = {"price", "shipping", "discount", "income", "ebay_fees", "total", "amount_paid", "amount", "fee_credit"}
 SECTIONS = ("sales", "purchases", "fees", "other")
 
 

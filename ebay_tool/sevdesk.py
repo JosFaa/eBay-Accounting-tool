@@ -14,7 +14,7 @@ import requests
 from .config import DATA_DIR
 from .receipts import fees_receipt, purchase_receipt, safe_name, sale_receipt
 from .store import local_date
-from .summary import is_cancelled, month_label, refunds
+from .summary import counts_as_income, counts_as_purchase, month_label, purchase_amount, refunds
 
 BASE_URL = "https://my.sevdesk.de/api/v1"
 TAX_RULE_KU_REVENUE = 11
@@ -135,7 +135,7 @@ def plan_vouchers(ledger, start, end, today=None):
     today = today or date.today()
     vouchers, notes = [], []
     for s in ledger.rows("sales", start, end):
-        if is_cancelled(s) or s["income"] <= 0:
+        if not counts_as_income(s) or s["income"] <= 0:
             continue
         vouchers.append({
             "kind": "sale", "desc": PREFIX + "V-" + s["order_id"], "date": local_date(s["date"]),
@@ -144,13 +144,14 @@ def plan_vouchers(ledger, start, end, today=None):
             "positions": [("revenue", s["income"], "Verkauf %s (%s)" % (s["order_id"], s.get("buyer_country", "")))],
         })
     for p in ledger.rows("purchases", start, end):
-        if p["total"] <= 0:
+        if not counts_as_purchase(p):
             continue
+        paid = purchase_amount(p)
         vouchers.append({
             "kind": "purchase", "desc": PREFIX + "K-" + p["order_id"], "date": local_date(p["date"]),
-            "party": p.get("seller") or "eBay-Verkäufer", "amount": p["total"],
+            "party": p.get("seller") or "eBay-Verkäufer", "amount": paid,
             "text": p["items"], "row": p,
-            "positions": [("purchases", p["total"], "Wareneinkauf %s" % p["order_id"])],
+            "positions": [("purchases", paid, "Wareneinkauf %s" % p["order_id"])],
         })
     # fees: one voucher per month, only for months that are over and fully in the period
     y, m = start.year, start.month

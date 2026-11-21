@@ -14,17 +14,56 @@ MONTHS_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli",
              "August", "September", "Oktober", "November", "Dezember"]
 
 
+PAID_STATES = {"PAID", "FULLY_REFUNDED", "PARTIALLY_REFUNDED"}
+
+
 def is_cancelled(sale):
     return sale.get("cancel_state") == "CANCELED"
+
+
+def counts_as_income(sale):
+    """A sale is income once the buyer paid, even if it was later refunded or cancelled:
+    the refund is booked separately on its own date, so both months stay correct.
+    Unpaid orders (PENDING, FAILED) and cancellations before payment are not income."""
+    status = sale.get("payment_status") or ""
+    if status:
+        return status in PAID_STATES
+    return not is_cancelled(sale)  # rows without a status (old data): previous rule
+
+
+def income_sales(rows):
+    return [s for s in rows if counts_as_income(s)]
+
+
+def purchase_amount(p):
+    """What was actually paid. eBay rows carry amount_paid; CSV rows only a total."""
+    if p.get("source") == "eBay-API":
+        return p.get("amount_paid") or Decimal("0")
+    return p.get("total") or Decimal("0")
+
+
+def counts_as_purchase(p):
+    return p.get("status") != "Cancelled" and purchase_amount(p) > 0
+
+
+def paid_purchases(rows):
+    return [p for p in rows if counts_as_purchase(p)]
+
+
+def skipped_purchases(rows):
+    return [p for p in rows if not counts_as_purchase(p)]
 
 
 def refunds(other_rows):
     return [o for o in other_rows if o.get("type") == "REFUND"]
 
 
-def _signed_refund(r):
-    # DEBIT = money back to the buyer (reduces income)
-    return r["amount"] if r.get("booking", "DEBIT") == "DEBIT" else -r["amount"]
+def refund_amount(r):
+    """Money given back to the buyer (positive), credits to the seller negative.
+    eBay's REFUND amount is what the seller was charged; the fee credit eBay gave back
+    is added on top so the full refund reduces income and the credit reduces fees."""
+    gross = r["amount"] + (r.get("fee_credit") or Decimal("0"))
+    return gross if r.get("booking", "DEBIT") == "DEBIT" else -gross
 
 
 def month_key(d):
@@ -37,8 +76,8 @@ def month_label(key):
 
 
 def summarize(ledger, start, end):
-    sales = [s for s in ledger.rows("sales", start, end) if not is_cancelled(s)]
-    purchases = ledger.rows("purchases", start, end)
+    sales = income_sales(ledger.rows("sales", start, end))
+    purchases = paid_purchases(ledger.rows("purchases", start, end))
     fees = ledger.rows("fees", start, end)
     refs = refunds(ledger.rows("other", start, end))
 
@@ -64,9 +103,9 @@ def summarize(ledger, start, end):
         cc["count"] += 1
         cc["income"] += s["income"]
     for r in refs:
-        bucket(r)["refunds"] += _signed_refund(r)
+        bucket(r)["refunds"] += refund_amount(r)
     for p in purchases:
-        bucket(p)["purchases"] += p["total"]
+        bucket(p)["purchases"] += purchase_amount(p)
     for f in fees:
         bucket(f)["labels" if f.get("kind") == "label" else "fees"] += f["amount"]
 

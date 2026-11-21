@@ -20,7 +20,8 @@ class EbayError(Exception):
 
 
 def _iso(dt):
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (dt.microsecond // 1000)
 
 
 def _windows(start, end, days):
@@ -66,8 +67,11 @@ class EbayClient:
                 orders = body.get("orders", [])
                 rows.extend(sale_row(o) for o in orders)
                 offset += len(orders)
-                if not orders or offset >= body.get("total", 0):
+                if offset >= body.get("total", 0):
                     break
+                if not orders:  # eBay announced more rows than it sent: don't save a partial result
+                    raise EbayError("eBay hat unvollständige Verkäufe geliefert (%d von %d). Bitte später nochmal versuchen."
+                                    % (offset, body.get("total", 0)))
         return rows
 
     # ---- fees / refunds / payouts ----
@@ -84,8 +88,11 @@ class EbayClient:
                 txs = body.get("transactions", [])
                 raw.extend(txs)
                 offset += len(txs)
-                if not txs or offset >= body.get("total", 0):
+                if offset >= body.get("total", 0):
                     break
+                if not txs:  # eBay announced more rows than it sent: don't save a partial result
+                    raise EbayError("eBay hat unvollständige Finanzdaten geliefert (%d von %d). Bitte später nochmal versuchen."
+                                    % (offset, body.get("total", 0)))
         return split_transactions(raw)
 
     # ---- purchases ----

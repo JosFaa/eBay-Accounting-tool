@@ -101,12 +101,32 @@ def split_transactions(transactions):
                 amount=_signed_expense(tx),
             ))
         else:
+            credit = Decimal("0")
+            if ttype == "REFUND":
+                # eBay gives back part of the selling fees on a refund: book them as negative fees
+                n = 0
+                for li in tx.get("orderLineItems", []):
+                    for fee in li.get("marketplaceFees", []):
+                        amount = _money(fee.get("amount"))
+                        if not amount:
+                            continue
+                        n += 1
+                        credit += amount
+                        fees.append(dict(
+                            base,
+                            key="%s:credit:%d" % (base["transaction_id"], n),
+                            kind="fee",
+                            fee_type="FEE_CREDIT",
+                            description="Gebührengutschrift (Erstattung)",
+                            amount=-amount,
+                        ))
             other.append(dict(
                 base,
                 type=ttype,
                 booking=tx.get("bookingEntry", ""),
                 description=tx.get("transactionMemo", ""),
                 amount=_money(tx.get("amount")),
+                fee_credit=credit,
             ))
     return fees, other
 

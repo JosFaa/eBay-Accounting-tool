@@ -3,12 +3,14 @@
 An eBay purchase from a private seller has no invoice, so an Eigenbeleg
 documents date, seller, item, amount and business purpose.
 """
+import hashlib
 import re
 from datetime import date
 
 from fpdf import FPDF
 
 from .store import local_date
+from .summary import purchase_amount, refund_amount
 
 
 def _latin1(text):
@@ -24,6 +26,11 @@ def _eur(d):
 
 def safe_name(s):
     return re.sub(r"[^A-Za-z0-9_-]+", "_", s)[:60]
+
+
+def unique_name(s):
+    """Readable file name part plus a short hash, so IDs like 'A/B' and 'A_B' stay apart."""
+    return "%s-%s" % (safe_name(s), hashlib.sha1(s.encode("utf-8")).hexdigest()[:6])
 
 
 def _pdf(title, subtitle, fields, note, owner_name, signature=True):
@@ -63,7 +70,7 @@ def purchase_receipt(p, path, owner_name=""):
         ("Artikel:", p["items"]),
         ("Artikelpreis:", _eur(p["price"])),
         ("Versand:", _eur(p["shipping"])),
-        ("Gesamtbetrag bezahlt:", _eur(p["total"])),
+        ("Gesamtbetrag bezahlt:", _eur(purchase_amount(p))),
         ("Zahlungsweg:", "Bezahlung über eBay"),
         ("Zweck:", "Wareneinkauf zum Weiterverkauf"),
     ]
@@ -119,6 +126,22 @@ def sales_summary_receipt(month_label_text, rows, path, owner_name=""):
     note = ("Sammelbeleg der eBay-Verkäufe (Artikel + Versand, abzüglich Rabatte, stornierte Verkäufe nicht enthalten).\n"
             "Gemäß §19 UStG wird keine Umsatzsteuer berechnet. Zahlungseingang über eBay-Auszahlungen.\n\n" + lines)
     pdf = _pdf("eBay-Verkäufe " + month_label_text, "Sammelbeleg Einnahmen", fields, note, owner_name, signature=False)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pdf.output(str(path))
+    return path
+
+
+def refunds_receipt(month_label_text, rows, path, owner_name=""):
+    """Refunds to buyers in one month: booked as reduction of income (or expense) in sevDesk."""
+    total = sum(refund_amount(r) for r in rows)
+    fields = [("Monat:", month_label_text), ("Anzahl Erstattungen:", str(len(rows))), ("Summe erstattet:", _eur(total))]
+    lines = "\n".join("%s  %-16s %12s  %s" % (local_date(r["date"]).strftime("%d.%m."), r.get("order_id") or "-",
+                                             _eur(refund_amount(r)), (r.get("description") or "")[:45])
+                       for r in rows)
+    note = ("Erstattungen an Käufer aus den eBay-Finanzdaten (Betrag an den Käufer, vor Gebührengutschrift).\n"
+            "Mindert die Einnahmen des Monats der Erstattung. Gebührengutschriften stehen in der Gebühren-Übersicht.\n\n"
+            + lines)
+    pdf = _pdf("eBay-Erstattungen " + month_label_text, "Sammelbeleg Erstattungen", fields, note, owner_name, signature=False)
     path.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(path))
     return path

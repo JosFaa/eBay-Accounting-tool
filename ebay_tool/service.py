@@ -111,39 +111,66 @@ def _completed_months(start, end, today):
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
 
 
+SUBFOLDERS = ("1 Einkäufe", "2 Verkäufe", "3 eBay-Gebühren", "4 Erstattungen")
+
+
+def _clear_old_pdfs(folder):
+    """Remove PDFs from an earlier export of the same period, so nothing outdated
+    (e.g. a sale cancelled since) can be uploaded by mistake. Only our own subfolders."""
+    for name in SUBFOLDERS:
+        sub = folder / name
+        if sub.is_dir():
+            for f in sub.glob("*.pdf"):
+                f.unlink()
+
+
 def export_receipts(cfg, start, end, today=None):
     """Write all receipts as PDFs into one folder for manual upload to sevDesk."""
-    from .receipts import fees_receipt, purchase_receipt, safe_name, sales_summary_receipt
-    from .summary import is_cancelled, month_label
+    from .receipts import (fees_receipt, purchase_receipt, refunds_receipt, sales_summary_receipt,
+                           unique_name)
+    from .summary import income_sales, month_label, paid_purchases, refunds, skipped_purchases
 
     today = today or date.today()
     ledger = Ledger()
     owner = cfg.get("owner_name", "")
     folder = export_dir(cfg) / ("Belege %s bis %s" % (start.strftime("%Y-%m"), end.strftime("%Y-%m")))
-    counts = {"purchases": 0, "sales": 0, "fees": 0}
-    for p in ledger.rows("purchases", start, end):
-        d = local_date(p["date"])
-        name = "%s Einkauf %s.pdf" % (d.isoformat(), safe_name(p["order_id"]))
-        purchase_receipt(p, folder / "1 Einkäufe" / name, owner)
-        counts["purchases"] += 1
+    _clear_old_pdfs(folder)
+    counts = {"purchases": 0, "sales": 0, "fees": 0, "refunds": 0}
     notes = []
+    all_purchases = ledger.rows("purchases", start, end)
+    for p in paid_purchases(all_purchases):
+        d = local_date(p["date"])
+        name = "%s Einkauf %s.pdf" % (d.isoformat(), unique_name(p["order_id"]))
+        purchase_receipt(p, folder / SUBFOLDERS[0] / name, owner)
+        counts["purchases"] += 1
+    skipped = skipped_purchases(all_purchases)
+    if skipped:
+        notes.append("%d Kauf/Käufe ohne Beleg (storniert oder nicht bezahlt): %s. Bitte in eBay prüfen."
+                     % (len(skipped), ", ".join(p["order_id"] for p in skipped[:10])))
     months = list(_completed_months(start, end, today))
     for key, first, last in months:
-        sales = [s for s in ledger.rows("sales", first, last) if not is_cancelled(s)]
+        sales = income_sales(ledger.rows("sales", first, last))
         if sales:
             sales_summary_receipt(month_label(key), sales,
-                                  folder / "2 Verkäufe" / ("%s Verkäufe %s.pdf" % (key, month_label(key))), owner)
+                                  folder / SUBFOLDERS[1] / ("%s Verkäufe %s.pdf" % (key, month_label(key))), owner)
             counts["sales"] += 1
         fees = ledger.rows("fees", first, last)
         if fees:
             fees_receipt(month_label(key), fees,
-                         folder / "3 eBay-Gebühren" / ("%s Gebühren-Übersicht %s.pdf" % (key, month_label(key))), owner)
+                         folder / SUBFOLDERS[2] / ("%s Gebühren-Übersicht %s.pdf" % (key, month_label(key))), owner)
             counts["fees"] += 1
+        refs = refunds(ledger.rows("other", first, last))
+        if refs:
+            refunds_receipt(month_label(key), refs,
+                            folder / SUBFOLDERS[3] / ("%s Erstattungen %s.pdf" % (key, month_label(key))), owner)
+            counts["refunds"] += 1
+            notes.append("%s: %d Erstattung(en) an Käufer. Beleg liegt in „4 Erstattungen“: in sevDesk als "
+                         "Minderung der Einnahmen buchen." % (month_label(key), len(refs)))
     done = {k for k, _, _ in months}
     y, m = start.year, start.month
     while date(y, m, 1) <= end:
         if "%04d-%02d" % (y, m) not in done:
-            notes.append("%s ist noch nicht abgeschlossen: Verkäufe und Gebühren dafür erst nächsten Monat exportieren."
+            notes.append("%s ist noch nicht abgeschlossen: Verkäufe, Gebühren und Erstattungen dafür erst nächsten Monat exportieren."
                          % month_label("%04d-%02d" % (y, m)))
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     return {"folder": folder, "counts": counts, "notes": notes}
